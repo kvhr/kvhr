@@ -1,0 +1,416 @@
+#include<pic.h>
+#include<stdio.h>
+
+#define lcd_data PORTB
+#define lcd_rs RB0
+#define lcd_en RB1
+#define buzzer RD4 
+
+#define motor RD2
+#define pulse  RD0
+#define  ed  RD1
+unsigned int g=0;
+float p,tmpr,f,result;
+ unsigned int t1,t2,t3;
+
+unsigned int test=0,value;
+unsigned int speed=0;
+
+void delay(unsigned int x)
+{
+  unsigned int k;
+    unsigned int j;
+      for(k=0;k<x;k++)
+        for(j=0;j<165;j++);
+}
+void lcdcmd(unsigned char value)		   // LCD COMMAND
+  {
+      
+   
+	 lcd_data=value&(0xf0); //send msb 4 bits
+      lcd_rs=0;	  //select command register
+      lcd_en=1;	  //enable the lcd to execute command
+	  delay(3);
+	  lcd_en=0;  
+      lcd_data=((value<<4)&(0xf0));	 //send lsb 4 bits
+      lcd_rs=0;	 //select command register
+      lcd_en=1;	 //enable the lcd to execute command
+	  delay(3);
+	  lcd_en=0;  
+      
+  }  
+void lcd_init(void)
+{
+ lcdcmd(0x02);	
+ lcdcmd(0x02);
+ lcdcmd(0x28);  //intialise the lcd in 4 bit mode*/
+ lcdcmd(0x28);  //intialise the lcd in 4 bit mode*/
+ 
+ lcdcmd(0x0e);	//cursor blinking
+ lcdcmd(0x06);	//move the cursor to right side
+ lcdcmd(0x01);	//clear the lcd
+
+}	
+void lcddata(unsigned char value)
+
+  {
+       
+      lcd_data=value&(0xf0); //send msb 4 bits
+      lcd_rs=1;	  //select data register
+    // while(1);
+      lcd_en=1;	  //enable the lcd to execute data
+	  delay(3);
+	  lcd_en=0;  
+      lcd_data=((value<<4)&(0xf0));	 //send lsb 4 bits
+      lcd_rs=1;	  //select data register
+      lcd_en=1;	  //enable the lcd to execute data
+	  delay(3);
+	  lcd_en=0;  
+      
+     delay(3); 
+  }  
+
+
+
+void ADC_Init()
+{
+  ADCON0 = 0x41; //ADC Module Turned ON and Clock is selected
+  ADCON1 = 0xC0; //All pins as Analog Input
+                 //With reference voltages VDD and VSS
+}
+unsigned int ADC_Read(unsigned char channel)
+{
+  if(channel > 7) //If Invalid channel selected 
+    return 0;     //Return 0
+
+  ADCON0 &= 0xC5; //Clearing the Channel Selection Bits
+  ADCON0 |= channel<<3; //Setting the required Bits
+  delay(10);
+  //__delay_ms(2); //Acquisition time to charge hold capacitor
+  ADCON0 = (ADCON0 | 0x04);
+  //GO_nDONE = 1; //Initializes A/D Conversion
+  //while(GO_nDONE); //Wait for A/D Conversion to complete
+while((ADCON0&0X04)==0X04);  
+return ((ADRESH<<8)+ADRESL); //Returns Result
+}
+void msgdisplay(const unsigned char b[]) // send string to lcd
+  {
+unsigned char s,count=0;
+for(s=0;b[s]!='\0';s++)
+ {
+  count++;	 
+  if(s==16)
+   lcdcmd(0xc0);
+   if(s==32)
+   {
+   lcdcmd(1);
+   count=0;
+   }
+  lcddata(b[s]);
+ }
+}	
+
+void convert(unsigned int c)
+{
+   unsigned int a1,b1,a,b,d,e;
+   a1=c/1000;
+   a1=a1|0x30;
+   lcddata(a1);
+   b1=c%1000;
+   a=b1/100;
+   a=a|0x30;
+   lcddata(a);
+   b=c%100;
+   d=b/10;
+   d=d|0x30;
+   lcddata(d);
+   e=b%10;
+   e=e|0x30;
+   lcddata(e);
+}
+
+
+
+void serinit()
+{
+ TRISC7 = 1;
+ TRISC6 = 0;
+
+//SPBRG = 12;//19200
+ SPBRG = 25;//9600
+// SPBRG = 51;//4800
+// SPBRG = 103;//2400
+// SPBRG = 207;//1200
+ BRGH = 1;
+ TXSTA=0x24;
+ RCSTA=0x90;
+ TXEN=1;
+ SPEN=1;
+}
+
+void sertxc(unsigned char tx)
+{
+ TXREG = tx;
+ while(!TRMT);
+}
+
+void sertxs(const unsigned char *txs)
+{
+ for(;*txs != '\0';txs++)
+ {
+  TXREG = *txs;
+  while(!TRMT);
+ }
+}
+
+unsigned char receive()
+{ 
+ unsigned char rce;
+   CREN = 1;
+   OERR=0;
+    while(RCIF==0);//{if(OERR == 1)OERR=0;}
+      
+		rce=RCREG;
+   CREN=0;     
+          RCIF=0;
+ return rce;
+}
+
+void okcheck()
+{
+ unsigned char rce;
+ do{
+    rce = receive();
+   }while(rce != 'K');
+}
+
+#define send sertxs	//define your serial string sending function
+
+
+void converts(unsigned int c)
+{
+   unsigned int a1,b1,a,b,d,e;
+   a1=c/1000;
+   a1=a1|0x30;
+   sertxc(a1);
+   b1=c%1000;
+   a=b1/100;
+   a=a|0x30;
+   sertxc(a);
+   b=c%100;
+   d=b/10;
+   d=d|0x30;
+   sertxc(d);
+   e=b%10;
+   e=e|0x30;
+   sertxc(e);
+}
+ void GPRS_send1();
+
+void main()
+{
+
+
+unsigned int  x,y;
+ unsigned char rr,count;
+ 
+unsigned char mydata;    
+   unsigned int t=0;
+unsigned int soil=0;
+motor=0;
+pulse=1;
+
+
+
+ TRISB = 0x00;      //OUTPUT
+ //TRISD = 0xff;      //INPUT
+ TRISD = 0x0F;
+   
+TRISC = 0xFF;
+  
+unsigned int a1,a2,a3,a4;
+
+  TRISA=0x2F;//make portA as input.
+  PORTA=0X00;
+  TRISB=0x00;//Output
+
+ ADCON1=0X8E;
+ ADCON0=0X01;
+
+ ADC_Init();
+   serinit();
+                                 //INTEGRATED MULTI FUNCTIONAL ENVIRONMENTAL SENSORS USING GSM TECHNOLOGY
+   lcd_init();
+   lcdcmd(1);
+   msgdisplay("WELCOME");
+
+
+   
+delay(400);
+ lcdcmd(1);
+ msgdisplay("WIRELESS ");
+lcdcmd(0xc0);
+
+ msgdisplay("BLACK BOX");
+delay(400);
+    
+  
+    lcdcmd(1);
+   
+
+
+
+
+lcdcmd(1);
+  while(1) 
+  { 
+
+lcdcmd(1);
+if(pulse==0)
+{
+g=g+1;
+if(g>4)
+{
+g=0;
+}
+}  
+
+lcdcmd(0x80);
+  msgdisplay("S:");
+  lcdcmd(0x82);
+speed = ADC_Read(0);
+
+speed=speed/7;
+//speed= map(speed,1023,0,100,0);
+convert(speed);
+delay(100);
+lcdcmd(0xc0);
+  msgdisplay("X");
+  lcdcmd(0xC1);
+
+x = ADC_Read(1);
+convert(x);
+lcdcmd(0xc5);
+    msgdisplay("Y");
+  lcdcmd(0xC6);
+y = ADC_Read(2);
+convert(y); 
+delay(200);
+      delay(500);
+lcdcmd(0x86);
+  msgdisplay("T:");
+ 
+a1 = ADC_Read(3);
+f=a1;           //unsigned to float conversion
+p=(f*5)/1023;    //equivalent voltage calculation from ADC output
+tmpr=p*100;
+lcdcmd(0x88);
+convert(tmpr); 
+    lcdcmd(0xcb);
+convert(g); 
+delay(500);
+eeprom_write(0,speed);
+eeprom_write(1,tmpr);
+eeprom_write(2,g);
+
+
+if(ed==0)
+{
+
+t1=eeprom_read(0);
+t2=eeprom_read(1);
+t3=eeprom_read(2);
+
+lcdcmd(0x01);
+lcdcmd(0x80);
+  msgdisplay("s");
+ convert(t1); 
+lcdcmd(0xc0);
+ msgdisplay("t");
+ convert(t2);
+lcdcmd(0xc8);
+  msgdisplay("g");
+  convert(g);
+delay(1000);
+
+}
+
+if(x<200 || y<200 || x>380 || y>380)
+{
+	lcdcmd(0x01);
+  
+	msgdisplay("ACCIDENT");
+delay(300);
+GPRS_send1();
+}
+         
+   }
+                                                              
+   }
+
+
+
+
+ void GPRS_send1()
+	{
+
+
+	lcdcmd(0x01);
+ 
+	msgdisplay("UPLOADING DATA..");
+delay(300);
+ 
+  delay(500);
+  sertxs("AT\r\n");
+  delay(500);
+ sertxs("AT+CPIN?\r\n");//check for sim
+  delay(500);
+  sertxs("AT+CREG?\r\n"); // checking sim registeration
+  delay(500);
+  sertxs("AT+CGATT?\r\n");//checking if MS is connected to GPRS
+  delay(500);
+ sertxs("AT+CIPSHUT\r\n");
+  delay(500);
+ sertxs("AT+CIPSTATUS\r\n"); // current connection status
+  delay(500);
+ sertxs("AT+CIPMUX=0\r\n");// start multiconnection
+  delay(1000);
+  	sertxs("AT+CSTT=\"Idea Internet\"");// APN of the sim
+	sertxs("\"\r\n");
+  delay(1000);
+sertxs("AT+CIICR\r\n");// start wireless connection with GPRS
+  delay(1000);
+ sertxs("AT+CIFSR\r\n");//get local IP address
+  delay(1000);
+  sertxs("AT+CIPSPRT=0\r\n");
+  delay(2000);
+  sertxs("AT+CIPSTART=\"TCP\",\"api.thingspeak.com\",\"80\"\r\n");// start TCP connection AT+HTTPPARA=\"URL\",\"api.thingspeak.com/update\"
+  delay(2000);
+sertxs("AT+CIPSEND\r\n");// send data through TCP/UDP connection
+  delay(3000);
+
+	 sertxs("GET https://api.thingspeak.com/update?api_key=1CK1TXJN2BZ4OSE7&field1=");//1CK1TXJN2BZ4OSE7
+	
+	converts(speed);
+	 sertxs("&field2=");
+converts(tmpr);
+ sertxs("&field3=");
+converts(g);
+
+ 		
+  sertxs("\"\r\n");
+  delay(2000);
+  //send_1(26);
+	sertxc(0X1A);
+  delay(1000);
+   sertxs("\"\r\n");
+  sertxs("AT+CIPSHUT\r\n");
+  delay(1000);
+  	lcdcmd(0x01);
+  //lcd.setCursor(0, 1);
+		msgdisplay("UPLOADED");
+   delay(1000);
+ 	lcdcmd(0x01);
+
+}
+	
